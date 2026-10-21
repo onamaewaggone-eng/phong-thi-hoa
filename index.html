@@ -22,12 +22,6 @@ body{background:var(--bg);color:var(--text);min-height:100vh;line-height:1.5; tr
 .quiz-card{background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px;cursor:pointer;transition:border-color .15s;display:flex;justify-content:space-between;align-items:center}
 .quiz-card:hover{border-color:var(--primary)}
 .quiz-card h3{font-size:16px;margin-bottom:4px}.quiz-card p{color:var(--muted);font-size:13px}
-.filter-box{display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;background:#fff;padding:16px;border-radius:8px;border:1px solid var(--border)}
-.filter-group{display:flex;flex-direction:column;gap:6px}
-.filter-group label{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase}
-.filter-tabs{display:flex;gap:4px;background:#f1f5f9;padding:4px;border-radius:6px}
-.filter-tabs button{padding:6px 12px;border:none;background:transparent;border-radius:4px;cursor:pointer;font-weight:600;color:var(--muted);font-size:14px}
-.filter-tabs button.active{background:#fff;color:var(--primary);box-shadow:0 1px 2px rgba(0,0,0,0.1)}
 .dash-section-title{font-size:12px;font-weight:700;color:var(--primary);text-transform:uppercase;margin:16px 0 8px 0;border-bottom:1px solid var(--border);padding-bottom:4px}
 .grid-container{display:grid;grid-template-columns:repeat(5, 1fr);gap:8px}
 .grid-btn{height:38px;border:1px solid var(--border);background:#fff;border-radius:6px;cursor:pointer;font-weight:600;position:relative;display:flex;justify-content:center;align-items:center;font-size:14px}
@@ -99,12 +93,9 @@ body.cheating-alert {
 </head>
 <body>
 
-<!-- THÔNG BÁO NỔI CẢNH BÁO GIAN LẬN -->
 <div id="cheat-toast"></div>
-
 <div class="container" id="app"></div>
 
-<!-- KHUNG IN SỔ TAY LỖI SAI -->
 <div id="mistake-notebook">
   <div class="nb-header">
     <div class="nb-title">SỔ TAY LỖI SAI - MÔN HÓA HỌC</div>
@@ -117,27 +108,24 @@ body.cheating-alert {
   <div id="nb_content"></div>
 </div>
 
+<script src="de-thi.js"></script>
 <script>
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbyzY-XMm7KTuuA4OHpJu0rlnVPdbaVvaTc-E8be7PJq3RiFOj6yyRYxq20_3E9aQiIb/exec'; 
-const JSONBIN_KEY = '$2a$10$8JLOaHEkj.u2sbRk2pAOduML3/hAljVgiBuBqEF7v.ncdsV9.TDoi'; 
-const EXAM_BIN_ID = '6ad783bcffd5d160537c580e'; 
 
 let currentQuiz = null, answers = {}, currentQ = 0;
 let bookmarks = new Set();
 let timerInterval = null, timeLeft = 0;
 let studentName = "";
-let currentKhoi = "THPT"; 
-let currentLop = "10"; 
-let currentLoai = "thu"; 
+let currentStudentRole = ""; // "Thử" hoặc "Chính"
+let assignedExamIds = []; // Danh sách ID đề được giáo viên gán
 let EXAMS = []; 
 const app = document.getElementById('app');
 
-// --- HỆ THỐNG GHI LOG & CẢNH BÁO GIAN LẬN ---
 let isExamRunning = false; 
 let cheatLogs = [];
 
 function logCheat(reason) {
-  if (!isExamRunning) return; // Chỉ bắt lỗi khi thực sự đang làm bài
+  if (!isExamRunning) return; 
   const now = new Date();
   const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
   
@@ -181,16 +169,21 @@ function renderMath(text) {
 }
 
 async function init() {
-  app.innerHTML = '<div class="loading">⏳ Đang tải đề thi...</div>';
+  app.innerHTML = '<div class="loading">⏳ Đang tải ngân hàng đề thi...</div>';
   try {
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${EXAM_BIN_ID}/latest?t=${Date.now()}`, { headers: { 'X-Master-Key': JSONBIN_KEY } });
-    if (!res.ok) throw new Error(`Lỗi kết nối (${res.status})`);
-    const json = await res.json();
-    EXAMS = json.record || [];
+    if (window.EXAM_DATA && Array.isArray(window.EXAM_DATA)) {
+      EXAMS = window.EXAM_DATA;
+    } else {
+      const res = await fetch(`de-thi.js?t=${Date.now()}`);
+      const text = await res.text();
+      const jsonStr = text.replace(/^window\.EXAM_DATA\s*=\s*/, "").replace(/;\s*$/, "");
+      EXAMS = JSON.parse(jsonStr);
+    }
+
     if (!Array.isArray(EXAMS)) EXAMS = [];
-    if (EXAMS.length === 0) renderEmptyState("Chưa có đề thi nào.");
+    if (EXAMS.length === 0) renderEmptyState("Chưa có đề thi nào trong hệ thống.");
     else renderLogin();
-  } catch (e) { renderEmptyState(e.message); }
+  } catch (e) { renderEmptyState("Lỗi tải đề thi: " + e.message); }
 }
 
 function renderEmptyState(errorMsg) {
@@ -211,67 +204,66 @@ function renderLogin() {
   app.innerHTML = `
     <div style="width:100%;text-align:center;padding:32px 0;">
       <h1 style="font-size:28px;margin-bottom:8px">🧪 Phòng thi Hóa học</h1>
-      <p style="color:var(--muted)">Vui lòng nhập họ tên để bắt đầu</p>
-      <div class="card" style="max-width:400px;margin:24px auto;">
-        <label style="font-weight:600">Họ và tên học sinh:</label>
-        <input type="text" id="nameInput" class="login-input" placeholder="VD: Nguyễn Văn A" onkeypress="if(event.key==='Enter') doLogin()">
-        <button class="btn btn-primary" style="width:100%;padding:12px" onclick="doLogin()">Vào thi</button>
+      <p style="color:var(--muted)">Đăng nhập tài khoản học viên để vào phòng thi</p>
+      <div class="card" style="max-width:400px;margin:24px auto; text-align:left;">
+        <label style="font-weight:600;display:block;margin-bottom:6px">Tên đăng nhập:</label>
+        <input type="text" id="userInput" class="login-input" placeholder="Nhập tài khoản..." style="margin-top:0;margin-bottom:12px">
+        
+        <label style="font-weight:600;display:block;margin-bottom:6px">Mật khẩu:</label>
+        <input type="password" id="passInput" class="login-input" placeholder="Nhập mật khẩu..." style="margin-top:0;margin-bottom:16px" onkeypress="if(event.key==='Enter') doLogin()">
+        
+        <button class="btn btn-primary" style="width:100%;padding:12px" onclick="doLogin()">Đăng nhập</button>
       </div>
     </div>
   `;
 }
 
-function doLogin() {
-  const name = document.getElementById('nameInput').value.trim();
-  if (!name) { alert("Vui lòng nhập họ tên!"); return; }
-  studentName = name;
-  renderHome();
+async function doLogin() {
+  const user = document.getElementById('userInput').value.trim();
+  const pass = document.getElementById('passInput').value.trim();
+  if (!user || !pass) { alert("Vui lòng nhập đầy đủ tài khoản và mật khẩu!"); return; }
+
+  app.innerHTML = '<div class="loading">⏳ Đang xác thực tài khoản từ hệ thống...</div>';
+  
+  try {
+    const res = await fetch(`${GAS_URL}?action=login&user=${encodeURIComponent(user)}&pass=${encodeURIComponent(pass)}`);
+    const json = await res.json();
+    
+    if (json.status === "success") {
+      studentName = json.student;
+      currentStudentRole = json.role; 
+      assignedExamIds = json.assignedExams; 
+      renderHome();
+    } else {
+      alert(json.message);
+      renderLogin();
+    }
+  } catch (e) {
+    alert("Lỗi kết nối máy chủ: " + e.message);
+    renderLogin();
+  }
 }
 
 function renderHome() {
   isExamRunning = false;
   if (!EXAMS.length) return;
   try {
-    const filtered = EXAMS.filter(q => q.khoi === currentKhoi && q.loai === currentLoai && (currentKhoi === 'LTDH' || q.lop === currentLop));
-    let lops = [];
-    if (currentKhoi === 'THCS') lops = ['6', '7', '8', '9'];
-    else if (currentKhoi === 'THPT') lops = ['10', '11', '12'];
+    // Chỉ hiển thị những đề thi có ID nằm trong danh sách giáo viên đã gán trên Google Sheets
+    const filtered = EXAMS.filter(q => assignedExamIds.includes(q.id));
 
     app.innerHTML = `
       <div style="width:100%">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 0;border-bottom:1px solid var(--border);margin-bottom:24px">
-          <div>👤 Chào <b>${escapeHtml(studentName)}</b></div>
+          <div>👤 Chào học viên: <b>${escapeHtml(studentName)}</b> <span class="badge badge-${currentStudentRole==='Thử'?'thu':'that'}">${currentStudentRole==='Thử'?'HỌC THỬ':'HỌC CHÍNH'}</span></div>
           <button class="btn" onclick="renderLogin()">Đăng xuất</button>
         </div>
-        <div class="filter-box">
-          <div class="filter-group">
-            <label>Khối</label>
-            <div class="filter-tabs">
-              <button class="${currentKhoi==='THCS'?'active':''}" onclick="currentKhoi='THCS'; currentLop='6'; renderHome()">THCS</button>
-              <button class="${currentKhoi==='THPT'?'active':''}" onclick="currentKhoi='THPT'; currentLop='10'; renderHome()">THPT</button>
-              <button class="${currentKhoi==='LTDH'?'active':''}" onclick="currentKhoi='LTDH'; currentLop=''; renderHome()">Luyện thi ĐH</button>
-            </div>
-          </div>
-          ${lops.length > 0 ? `
-          <div class="filter-group">
-            <label>Lớp</label>
-            <div class="filter-tabs">
-              ${lops.map(l => `<button class="${currentLop===l?'active':''}" onclick="currentLop='${l}'; renderHome()">Lớp ${l}</button>`).join('')}
-            </div>
-          </div>
-          ` : ''}
-          <div class="filter-group">
-            <label>Chế độ</label>
-            <div class="filter-tabs">
-              <button class="${currentLoai==='thu'?'active':''}" onclick="currentLoai='thu'; renderHome()">Thi Thử</button>
-              <button class="${currentLoai==='that'?'active':''}" onclick="currentLoai='that'; renderHome()">Thi Thật</button>
-            </div>
-          </div>
+        
+        <div style="margin-bottom:16px;">
+          <h2 style="font-size:18px">Danh sách đề thi được phân công (${filtered.length} đề)</h2>
+          <p style="font-size:13px;color:var(--muted)">Bạn chỉ có thể làm các đề thi đã được giáo viên chỉ định trong lộ trình.</p>
         </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-          <h2 style="font-size:18px">Danh sách đề ${currentLoai==='that'?'thi thật':'thi thử'} ${currentLop ? '- Lớp '+currentLop : ''}</h2>
-        </div>
-        ${filtered.length === 0 ? '<div class="card" style="text-align:center;color:var(--muted)">Chưa có đề nào trong mục này.</div>' : 
+
+        ${filtered.length === 0 ? '<div class="card" style="text-align:center;color:var(--muted);padding:40px">Hiện tại bạn chưa được giáo viên gán đề thi nào. Vui lòng liên hệ giáo viên!</div>' : 
           filtered.map((q, i) => {
             const realIdx = EXAMS.findIndex(x => x.id === q.id);
             return `
@@ -298,7 +290,6 @@ function startQuiz(idx) {
   startTimer();
   renderExamLayout();
 
-  // CHỜ 1 GIÂY ĐỂ TRÌNH DUYỆT ỔN ĐỊNH HOÀN TOÀN KHỎI HỘP THOẠI CONFIRM RỒI MỚI BẬT CHỐNG GIAN LẬN
   setTimeout(() => {
     isExamRunning = true;
   }, 1000);
